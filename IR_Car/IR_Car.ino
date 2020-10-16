@@ -6,11 +6,15 @@
 #define KI        0.05
 #define KD        0
 
+#define LOOP_TIME    50
+#define TIME_TO_STOP 500
+
 IRCar car;
 
-double offset, setPoint = 0, angleOffset;
+double offset, setPoint = 0, angleOffset, oldOffset;
 PID myPID(&offset, &angleOffset, &setPoint, KP, KI, KD, P_ON_M, DIRECT);
 float oldAngle = 0;
+
 
 int speed = 100;
   
@@ -51,11 +55,12 @@ void loop()
 {
 
   int max_handle = 60;
-  static long t1_cnt;
-  
-  if( t1_cnt - millis() >= 50)
+  static long t1_cnt, onWhite_cnt, currentTime;
+
+  currentTime = millis();
+  if( currentTime - t1_cnt >= LOOP_TIME)
   {
-    t1_cnt = millis();
+
     uint8_t sensor=car.IRLed_GetAllFilted();
     int pattern=0;
     //car.IRLed_SerialPrintFilted(sensor);
@@ -103,21 +108,32 @@ void loop()
       case 0b0000001:
         offset = -60;
         break;
-      case 0b1111111:
+      case 0b1111111: //full white
+        offset = 0;
+        onWhite_cnt += currentTime - t1_cnt;
+
+        if(millis() - onWhite_cnt >= TIME_TO_STOP){
+          car.Run(0, 0);
+        }
+        //car.Run(0,0);
+        break;
+      case 0b0000000: //full black
         offset = 0;
         car.Run(0,0);
         break;
-      case 0b0000000:
-        offset = 0;
-        car.Run(0,0);
-        break;
+      default:
+        offset = oldOffset;
     }
     //Serial.println(offset, 1);
     myPID.Compute();
     float newAngle = smoothDampAngle(oldAngle, angleOffset, .7);
-    oldAngle = angleOffset;
+    oldAngle = newAngle;
     Serial.println(angleOffset, 1);
     car.Turn((int16_t)newAngle);
+
+
+    oldOffset = offset;
+    t1_cnt = currentTime;
   }
   
 //  if ( (sensor == 0b0001000 || sensor == 0b0011000 || sensor == 0b0001100||sensor == 0b0011100)) {            
