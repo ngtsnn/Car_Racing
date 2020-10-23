@@ -4,20 +4,36 @@
 #define MAX_ANGLE 60
 #define KP        0.6
 #define KI        0.05
-#define KD        0
+#define KD        0.05
 
-#define LOOP_TIME    50
-#define TIME_TO_STOP 500
+#define LOOP_TIME     50
+#define TIME_TO_STOP  400
+#define ACCELERATION  3
 
 IRCar car;
 
+// this variables for ANGLE CONTROL
 double offset, setPoint = 0, angleOffset, oldOffset;
 PID myPID(&offset, &angleOffset, &setPoint, KP, KI, KD, P_ON_M, DIRECT);
 float oldAngle = 0;
 
+// this variables for MODIFY SPEED
+float speedRatio = 1;
+int baseSpeed = 100;
 
-int speed = 100;
-  
+// SWITCHING AND TURNING
+enum DIRECTION
+{
+  LEFT = -1,
+  NONE = 0,
+  RIGHT = 1
+};
+bool isGoingToTurnOrSwitch = false;
+bool isTurning = 0;
+bool isSwitching = 0;
+DIRECTION dir;
+
+//LED
 unsigned int *val;
 unsigned int threshold[7] = {30, 30, 30, 30, 30, 30, 30};
 
@@ -29,8 +45,11 @@ void Show_Leds(void) {
 
 float smoothDampAngle(double oldAngleOffset, double angleOffset, float t){
   double deltaAngel = angleOffset - oldAngleOffset;
-  return oldAngleOffset + deltaAngel * t;
+  return oldAngleOffset + deltaAngel * t * speedRatio;
 }
+
+void switchToLeft();
+void switchToRight();
 
 void setup() 
 {
@@ -41,14 +60,15 @@ void setup()
   car.IRLed_SetAllThreshold(threshold);
   car.Stop();
   delay(500);
-  
+
   /* Timer 2 use for show leds */
   TCCR2B = 0x07; // prescaler /1024
   TCNT2 = 255;
   TIMSK2 = 0x01; //interrupt enable
   interrupts();
 
-  car.Run(speed, speed);
+  car.Run(baseSpeed, baseSpeed);
+  
 }
 
 void loop() 
@@ -108,18 +128,103 @@ void loop()
       case 0b0000001:
         offset = -60;
         break;
+      case 0b1110000: //switch lane to left
+      case 0b1111000:
+      case 0b1111100:
+      case 0b1111110:
+        dir = LEFT;
+        if (isGoingToTurnOrSwitch){
+          car.Turn(-60);
+          car.Stop();
+          car.Run(-100, 100);
+          delay(800);
+          car.Run(baseSpeed, baseSpeed);
+          car.Turn(0);
+          dir = NONE;
+          isGoingToTurnOrSwitch = 0;          
+        }
+        else{
+          isGoingToTurnOrSwitch = 1;
+        }
+        break;
+      case 0b0000111: //switch lane to right
+      case 0b0001111:
+      case 0b0011111:
+      case 0b0111111:
+        dir = RIGHT;
+        if (isGoingToTurnOrSwitch){
+          car.Turn(60);
+          car.Stop();
+          car.Run(100, -100);
+          delay(800);
+          car.Run(baseSpeed, baseSpeed);
+          car.Turn(0);
+          dir = NONE;
+          isGoingToTurnOrSwitch = 0;
+        }
+        else{
+          isGoingToTurnOrSwitch = 1;
+        }
+        break;
       case 0b1111111: //full white
         offset = 0;
-        onWhite_cnt += currentTime - t1_cnt;
-
-        if(millis() - onWhite_cnt >= TIME_TO_STOP){
-          car.Run(0, 0);
+         if (isGoingToTurnOrSwitch && dir != NONE){
+          if(dir == RIGHT)
+          {
+            car.Turn(60);
+            car.Stop();
+            car.Run(100, -100);
+          }
+          if(dir == LEFT)
+          {
+            car.Turn(-60);
+            car.Stop();
+            car.Run(-100, 100);
+          }
+          delay(800);
+          car.Run(baseSpeed, baseSpeed);
+          car.Turn(0);
+          dir = NONE;
+          isGoingToTurnOrSwitch = 0;          
         }
-        //car.Run(0,0);
+        else{
+          isGoingToTurnOrSwitch = 1;
+          dir = NONE;
+        }
+
+        onWhite_cnt += currentTime - t1_cnt;
         break;
       case 0b0000000: //full black
         offset = 0;
-        car.Run(0,0);
+        if(isGoingToTurnOrSwitch){
+          car.Turn((int16_t)60 * dir);
+          car.Run(baseSpeed + dir*20, baseSpeed - dir*20);
+          delay(300);
+          car.Turn(0);
+          // run until middle sensor activated
+//          while(1)
+//          {
+//            uint8_t x = car.IRLed_GetAllFilted();
+//            if(x & 0b0001000)
+//            {
+//              car.Run(0, 0);
+//              break; 
+//            }
+//          }
+
+          delay(dir == LEFT ? 400 : 800); //temporary solution 
+          car.Turn((int16_t)-60 * dir);
+          car.Run(baseSpeed - dir*20, baseSpeed + dir*20);
+          delay(400);
+          car.Turn(0);
+          car.Run(baseSpeed, baseSpeed);
+          isGoingToTurnOrSwitch = false;
+          dir = NONE;
+        }
+        else
+        {
+          
+        }
         break;
       default:
         offset = oldOffset;
@@ -128,9 +233,18 @@ void loop()
     myPID.Compute();
     float newAngle = smoothDampAngle(oldAngle, angleOffset, .7);
     oldAngle = newAngle;
-    Serial.println(angleOffset, 1);
+//    Serial.println(angleOffset, 1);
     car.Turn((int16_t)newAngle);
 
+
+    //check no full white 
+    if (sensor != 0b1111111){
+      onWhite_cnt = 0;
+    }
+
+    if( onWhite_cnt >= TIME_TO_STOP){
+      car.Run(0, 0);
+    }
 
     oldOffset = offset;
     t1_cnt = currentTime;
@@ -200,4 +314,21 @@ void loop()
 ISR(TIMER2_OVF_vect) //ISR for Timer1 Overflow
 {
   Show_Leds();
+}
+
+void switchToLeft(){
+
+  while(1){
+    uint8_t sensor=car.IRLed_GetAllFilted();
+    if (sensor == 0b0000000){
+      while(1){
+        
+      }
+    }
+  }
+}
+
+void switchToRight()
+{
+  
 }
