@@ -2,9 +2,9 @@
 #include <PID_v1.h>
 
 #define MAX_ANGLE 60
-#define KP        0.5
-#define KI        0.0
-#define KD        0.0
+#define KP        0.55
+#define KI        0.05
+#define KD        0.05
 
 #define LOOP_TIME     50
 #define TIME_TO_STOP  400
@@ -21,7 +21,7 @@ float oldAngle = 0;
 
 // this variables for MODIFY SPEED
 float speedRatio = 1;
-int baseSpeed = 100;
+int baseSpeed = 120;
 
 // SWITCHING AND TURNING
 enum DIRECTION
@@ -33,6 +33,7 @@ enum DIRECTION
 bool isGoingToTurnOrSwitch = false;
 bool isTurning = false;
 bool isSwitching = false;
+bool isFullWhite = false;
 DIRECTION dir;
 
 //
@@ -42,10 +43,12 @@ DIRECTION side = NONE;
 unsigned int *val;
 unsigned int threshold[7] = {140, 140, 140, 140, 140, 140, 140};
 
-void Show_Leds(void) {
+uint8_t readSensor(void) 
+{
   car.IRLed_GetAllAnalog();
-  uint8_t filted = car.IRLed_GetAllFilted();
-  car.Led_Display(filted);
+  uint8_t x = car.IRLed_GetAllFilted();
+  car.Led_Display(x);
+  return x;
 }
 
 void smoothTurn(double angleOffset)
@@ -78,10 +81,10 @@ void setup()
   car.IRLed_SetAllThreshold(threshold);
   
   /* Timer 2 use for show leds */
-  TCCR2B = 0x07; // prescaler /1024
-  TCNT2 = 255;
-  TIMSK2 = 0x01; //interrupt enable
-  interrupts();
+//  TCCR2B = 0x07; // prescaler /1024
+//  TCNT2 = 255;
+//  TIMSK2 = 0x01; //interrupt enable
+//  interrupts();
 
 //  while(digitalRead(BT_4_PIN))
 // 
@@ -122,14 +125,13 @@ void setup()
 
 void loop() 
 {
-  static uint32_t t1_cnt, t2_cnt, onWhite_cnt, currentTime, timeReceivedReadySignal;
+  static uint32_t t1_cnt, t2_cnt, onWhite_cnt, currentTime, timeFromReadySignal;
   
   currentTime = millis();
   if( currentTime - t1_cnt >= LOOP_TIME)
   {
-    car.IRLed_GetAllAnalog(true);
-    sensor = car.IRLed_GetAllFilted();
-//    unsigned int *sensorVals = car.IRLed_GetAllAnalog(1);
+    sensor = readSensor();
+//    unsigned int *sensorVals = car.IRLed_GetAllAnalog(0);
 //    for (int i = 0; i < 7; i++){
 //      Serial.print(sensorVals[i]);
 //      Serial.print("\t");
@@ -223,74 +225,143 @@ void loop()
       case 0b1111000:
       case 0b1111100:
       case 0b1111110:
+      {
         if (dir == RIGHT){
-          dir == NONE; 
+          dir = NONE; 
           break;
         }
         dir = LEFT;
-        if(isGoingToTurnOrSwitch){
+        if(isGoingToTurnOrSwitch && timeFromReadySignal > 300)
+        {
           isTurning = true;
           isSwitching = false;
         } 
-        else{
+        else
+        {
           isGoingToTurnOrSwitch = true;
           isTurning = false;
           isSwitching = false;
         }
+//        static uint8_t blankingCount;
+//        dir = LEFT;
+//        if(blankingCount == 0)
+//        {
+//          if(isGoingToTurnOrSwitch)
+//          {
+//            isTurning = true;
+//            isSwitching = false;
+//          } 
+//          else
+//          {
+//            isGoingToTurnOrSwitch = true;
+//            isTurning = false;
+//            isSwitching = false;
+//          }
+//          blankingCount = 1;
+//        }
+//        else{
+//          blankingCount--;
+//        }
+
         break;
+      }
       case 0b0000111: //switch lane to right
       case 0b0001111:
       case 0b0011111:
       case 0b0111111:
+      {
         if (dir == LEFT){
-          dir == NONE; 
+          dir = NONE; 
           break;
         }
         dir = RIGHT;
-        if(isGoingToTurnOrSwitch){
+        if(isGoingToTurnOrSwitch && timeFromReadySignal > 300)
+        {
           isTurning = true;
           isSwitching = false;
-        }
-        else{
+        } 
+        else 
+        {
           isGoingToTurnOrSwitch = true;
           isTurning = false;
           isSwitching = false;
         }
+//        static uint8_t blankingCount;
+//        dir = RIGHT;
+//        if(blankingCount == 0)
+//        {
+//          if(isGoingToTurnOrSwitch)
+//          {
+//            isTurning = true;
+//            isSwitching = false;
+//          } 
+//          else
+//          {
+//            isGoingToTurnOrSwitch = true;
+//            isTurning = false;
+//            isSwitching = false;
+//          }
+//          blankingCount = 1;
+//        }
+//        else{
+//          blankingCount--;
+//        }
+
         break;
+      }
       case 0b1111111: //full white
-       onWhite_cnt += currentTime - t2_cnt;
-       isSwitching = false;
-        static uint8_t blankingTime;
-        if(blankingTime == 0)
-        {
-          offset = 0;
-          if(isGoingToTurnOrSwitch && dir != NONE){
-            isTurning = true;
-          }
-          else 
-          {
-            isGoingToTurnOrSwitch = true;
-            isTurning = false;
-          }
-          blankingTime = 2;
+        onWhite_cnt += currentTime - t2_cnt;
+        isSwitching = false;
+        
+        offset = 0;
+        if(isGoingToTurnOrSwitch && dir != NONE && timeFromReadySignal > 200){
+          isTurning = true;
         }
-        else
+        else 
         {
-          blankingTime--;
+          isGoingToTurnOrSwitch = true;
+          isTurning = false;
+          isFullWhite = true;
+          dir = NONE;
         }
+        
+       
+//        static uint8_t blankingTime;
+//        if(blankingTime == 0)
+//        {
+//          offset = 0;
+//          if(isGoingToTurnOrSwitch && dir != NONE){
+//            isTurning = true;
+//          }
+//          else 
+//          {
+//            isGoingToTurnOrSwitch = true;
+//            isTurning = false;
+//          }
+//          blankingTime = 2;
+//        }
+//        else
+//        {
+//          blankingTime--;
+//        }
  
         break;
       case 0b0000000: //full black
         offset = 0;
         isTurning = false;
-        if(isGoingToTurnOrSwitch && dir != NONE){
-          isSwitching = true;
+        if(isGoingToTurnOrSwitch && timeFromReadySignal > 300){
+          if(dir != NONE)
+            isSwitching = true;
         }
         else
         {
           isGoingToTurnOrSwitch = false;
+          isSwitching = false;
+          isTurning = false;
         }
         break;
+
+      
       default:
         offset = oldOffset;
     }
@@ -304,14 +375,14 @@ void loop()
 
     //Get time when we got Ready Signal
     if(isGoingToTurnOrSwitch){
-      timeReceivedReadySignal += currentTime - t2_cnt; 
+      timeFromReadySignal += currentTime - t2_cnt; 
     } else{
-      timeReceivedReadySignal = 0;
+      timeFromReadySignal = 0;
     }
 
     //If the Ready Signal we got and Turning signal come too quickly
     //we skip this signal maybe this is the Jam signal.  
-    if ((isSwitching || isTurning) && timeReceivedReadySignal <= 200)   
+    if ((isSwitching || isTurning) & 0)//&& timeFromReadySignal <= 200)   
     {
       isGoingToTurnOrSwitch = isSwitching = isTurning = false;
       dir = NONE;
@@ -325,55 +396,63 @@ void loop()
       // run until middle sensor activated
       while(1)
       {
-        car.IRLed_GetAllAnalog(true);
-        uint8_t x = car.IRLed_GetAllFilted();
-        
-        if(x & 0b0001000)
+        if(readSensor() & 0b0001000)
         {
           break; 
         }
-        delay(50);
+        delay(10);
       }
       car.Turn((int16_t)-60 * dir);
       car.Run(baseSpeed - dir*20, baseSpeed + dir*20);
-      delay(100);
+      delay(300);
       car.Turn(0);
       car.Run(baseSpeed, baseSpeed);
       isGoingToTurnOrSwitch = isSwitching = isTurning = false;
       dir = NONE;
+      isFullWhite = 0;
     }
     else if (isTurning && dir != NONE){
       Serial.println("turn");
       while(1)
       {
-        car.IRLed_GetAllAnalog(true);
-        if(car.IRLed_GetAllFilted() == 0)
+        if(readSensor() == 0)
         {
           break;
         }
+        delay(50);
       }
 
       car.Turn(60 * dir);
-      car.Stop();
       car.Run(100 * dir, -100 * dir);
-
+      uint8_t sensorMask, sensorVal;
+      
+      if(dir == RIGHT)
+      {
+        sensorMask = 0b1001001;
+        sensorVal = 0b0001000;
+      }
+      else
+      {
+        sensorMask = 0b1001001;
+        sensorVal = 0b0001000;        
+      }
       while(1)
       {
-        
-        car.IRLed_GetAllAnalog(true);
-        uint8_t x = car.IRLed_GetAllFilted();
-        
-        if(x & 0b0001000)
+        if((readSensor() & sensorMask) == sensorVal)
         {
           Serial.println("break");
           break; 
         }
-        delay(50);
+        delay(10);
       }
+      car.Run(baseSpeed - 40*dir, baseSpeed + 40*dir);
+      car.Turn(-30*dir);
+      delay(200);
       car.Run(baseSpeed, baseSpeed);
       car.Turn(0);
       dir = NONE;
       isGoingToTurnOrSwitch = isTurning = isSwitching = 0;
+      isFullWhite = false;
     }
     
 //    if(sensor & 0b0001000)
@@ -394,13 +473,15 @@ void loop()
 
     oldOffset = offset;
     t2_cnt = currentTime;
+    if (isFullWhite){
+      Serial.println("on full white");
+    }
   }
-  
+
 } //end loop
 
 ISR(TIMER2_OVF_vect) //ISR for Timer1 Overflow
 {
-  Show_Leds();
 }
 
 void switchToLeft(){
