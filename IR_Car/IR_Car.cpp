@@ -82,18 +82,32 @@ void IRCar::Led_Display(uint8_t filted) {
 unsigned int* IRCar::IRLed_GetAllAnalog(bool forceReadHW) {
   /* if read from hardware is required */
   if (forceReadHW == true) {
-    for (uint8_t iLed = 0; iLed < NO_IRLED; iLed++) {
+    for (uint8_t iLed = 0; iLed < NO_IRLED; iLed++) 
+    {
       uint8_t iLedHW = iLed + IRLED_PIN_BASE;
-      this->_IRLed_AnalogVal[iLed] = analogRead(iLedHW);
+      analogRead(iLedHW);
+      this->_IRLed_AnalogVal[iLed] = 0;
+      for(uint8_t i = 0; i < 16; i++)
+      {
+        this->_IRLed_AnalogVal[iLed] += analogRead(iLedHW);
+      }
+      this->_IRLed_AnalogVal[iLed] /= 16;
     }
   }
   return this->_IRLed_AnalogVal;
 }
+
 unsigned int IRCar::IRLed_GetEachAnalog(uint8_t LedIndex, bool forceReadHW) {
   /* if read from hardware is required */
   if (forceReadHW == true) {
     uint8_t iLedHW = LedIndex + IRLED_PIN_BASE;
-    this->_IRLed_AnalogVal[LedIndex] = analogRead(iLedHW);
+    analogRead(iLedHW);
+    this->_IRLed_AnalogVal[LedIndex] = 0;
+          for(uint8_t i = 0; i < 16; i++)
+      {
+        this->_IRLed_AnalogVal[LedIndex] += analogRead(iLedHW);
+      }
+      this->_IRLed_AnalogVal[LedIndex] /= 16;
   }
   return this->_IRLed_AnalogVal[LedIndex];
 }
@@ -128,6 +142,7 @@ bool IRCar::IRLed_GetEachFilted(uint8_t LedIndex) {
   }
   return false;
 }
+
 void IRCar::IRLed_SerialPrintFilted(uint8_t filted) {
   for(uint8_t iData=0; iData<NO_IRLED; iData++) {
     if(bit_is_set(filted, NO_IRLED-iData-1)) {
@@ -231,7 +246,7 @@ void IRCar::Turn(int16_t angle) {
   if(angle<-ANGLE_MAX) {
     angle = -ANGLE_MAX;
   }
-  OCR1A = (ANGLE_BASE+ angle);
+  OCR1A = (ANGLE_BASE + angle);
 }
 
 #endif /* IR_CAR_CPP */
