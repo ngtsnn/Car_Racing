@@ -180,14 +180,15 @@ uint8_t IRCar::Buttons_Check(void) {
   return UNPRESS;
 }
 
-bool IRCar::Distance_Get(void) {
+bool IRCar::getDistance(void) 
+{
   return (analogRead(DISTANCE_PIN) > DISTANCE_THRESHOLD);
 }
 
-void IRCar::Run(int16_t left, int16_t right) {
+void IRCar::run(int16_t left, int16_t right) {
   /* stop motor */
   if(left == 0 && right == 0) {
-    Stop();
+    stop();
     return;
   }
   /* start motor */
@@ -234,11 +235,11 @@ void IRCar::Run(int16_t left, int16_t right) {
   analogWrite(MOTOR_PWM_A_PIN, right);
   analogWrite(MOTOR_PWM_B_PIN, left);
 }
-void IRCar::Stop(void) {
+void IRCar::stop(void) {
   cbi(_motorControlVal, STBY_BIT);
   HC595_Update(_ledControlVal, _motorControlVal);
 }
-void IRCar::Turn(int16_t angle) {
+void IRCar::turn(int16_t angle) {
   angle = map(angle, -60, 60, -1500, 1500);
   if(angle>ANGLE_MAX) {
     angle = ANGLE_MAX;

@@ -38,7 +38,7 @@
 
 #define SERVO_PIN                 9
 #define ANGLE_BASE                2900
-#define ANGLE_MAX                 1300
+#define ANGLE_MAX                 1500
 
 #define SysLog_Begin(baudrate)    Serial.begin(baudrate)
 #define SysLog_Print(content)     Serial.print(content)
@@ -61,12 +61,12 @@ public:
 
   uint8_t Buttons_Check(void);
 
-  bool Distance_Get(void);
+  bool getDistance(void);
 
-  void Run(int16_t left, int16_t right);
-  void Stop(void);
+  void run(int16_t left, int16_t right);
+  void stop(void);
 
-  void Turn(int16_t angle);
+  void turn(int16_t angle);
 
   void Set_LedAll(uint8_t val);
   void Set_Led(uint8_t bit, bool state);
