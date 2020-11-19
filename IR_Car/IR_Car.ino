@@ -2,15 +2,16 @@
 #include <PID_v1.h>
 
 #define MAX_ANGLE 60
-#define KP        0.6
-#define KI        0.06
-#define KD        0.04
+#define KP        0.55
+#define KI        0.016
+#define KD        0.02
 
-#define LOOP_TIME       50
+#define LOOP_TIME       40
 #define TIME_TO_STOP    400
 #define ACCEL           10
 #define STEERING_ACCEL  15
-#define SPEEDRATIO      0.1
+#define SPEEDRATIO      0.15
+#define DEFINED_READY_TIME 150
 
 IRCar car;
 
@@ -35,15 +36,18 @@ bool ready = false;
 bool isTurning = false;
 bool isSwitching = false;
 bool passedFullWhite = false;
+bool obstacle = false;
 DIRECTION dir;
 
 //
 DIRECTION side = NONE;
 bool isLosingLine = false;
 
+bool checkStopSignal;
+
 //LED
 unsigned int *val;
-unsigned int threshold[7] = {140, 140, 140, 140, 140, 140, 140};
+unsigned int threshold[7] = {500, 500,  500,  500,  500,  500,  500};
 
 uint8_t countToStop;
 bool finishedRacing = false;
@@ -125,8 +129,6 @@ void setup()
     }
     delay(200);
   }
-  Serial.print("count = ");
-  Serial.println(countToStop);
   LED_status = 0b11000000;
   car.Led_Display(LED_status | countToStop);
   delay(500);
@@ -175,29 +177,67 @@ void setup()
 
 void loop() 
 {
-  static uint32_t t1_cnt, t2_cnt, onWhite_cnt, currentTime, readyInterval;
+  static uint32_t t1_cnt, onWhite_cnt, currentTime, readyInterval, dt;
   
   currentTime = millis();
-  if( currentTime - t1_cnt >= LOOP_TIME)
+  dt = currentTime - t1_cnt;
+
+  if( dt >= LOOP_TIME && !finishedRacing)
   {
+    //find obstacles
+    if(car.getDistance()){
+      //slow down the car
+//      car.run(80, 80);
+
+      car.run(60, 100);
+      //steer a little bit left
+      for(int angle = 0; angle >= -60; angle -= 5){
+        car.turn(angle);
+        delay(15);
+      }
+      car.run(80, 80);
+      
+      //go straight
+      car.turn(0);
+      delay(800);
+      
+      car.run(100, 60);
+      //steer right
+      for(int angle = 0; angle <= 60; angle += 5){
+        car.turn(angle);
+        delay(40);        
+      }
+      car.run(80, 80);
+      //go straight
+      car.turn(0);
+
+      //catch middle line
+      while(1)
+      {
+        if((readSensor() & 0b1001001) == 0b0001000)
+        {
+          break; 
+        }
+        delay(10);
+      }
+
+      car.turn(-15);
+      delay(300);
+      car.turn(0);
+      delay(100);
+
+      car.run(baseSpeed, baseSpeed);
+      ready = isTurning = isSwitching = false;
+      dir = side = NONE;
+    }
+    
     sensor = readSensor();
-//    unsigned int *sensorVals = car.IRLed_GetAllAnalog(0);
-//    for (int i = 0; i < 7; i++){
-//      Serial.print(sensorVals[i]);
-//      Serial.print("\t");
-//    }
-//     Serial.println();
-     t1_cnt = currentTime;
-  }
-  
-  currentTime = millis();
-  if( currentTime - t2_cnt >= LOOP_TIME && !finishedRacing)
-  {
+    obstacle = car.getDistance();
     //Get time when we got Ready Signal
     if(ready)
     {
-      readyInterval += currentTime - t2_cnt; 
-      if(readyInterval > 300)
+      readyInterval += dt; 
+      if(readyInterval >= DEFINED_READY_TIME)
       {
         passedFullWhite = 0;
       }
@@ -216,7 +256,8 @@ void loop()
         break;
       //align right
       case 0b0011000:
-        offset = 5;
+        offset = 6;
+        side = RIGHT;
         break;
       case 0b0010000:
         offset = 15;
@@ -232,7 +273,7 @@ void loop()
       case 0b1100000:
         if (side == LEFT)
         {
-          offset = -55;
+          offset = -60;
         }
 //        else if(isLosingLine){
 //          offset = -60;
@@ -245,19 +286,20 @@ void loop()
       case 0b1000000:
         if (side == LEFT)
         {
-          offset = -50;
+          offset = -70;
         }
 //        else if(isLosingLine){
 //          offset = -60;
 //        }
         else
         {
-          offset = 50;
+          offset = 70;
         }
         break;
       //align left
       case 0b0001100:
-        offset = -5;
+        offset = -6;
+        side = LEFT;
         break;
       case 0b0000100:
         offset = -15;
@@ -283,26 +325,26 @@ void loop()
       case 0b0000001:
         if (side == RIGHT)
         {
-          offset = 50;
+          offset = 70;
         }
 //        else if(isLosingLine){
 //          offset = 60;
 //        }
         else{
-          offset = -50;
+          offset = -70;
         }
         break;
       case 0b1000001:
         if (side == RIGHT)
         {
-          offset = 50;
+          offset = 60;
         }
 //        else if(isLosingLine){
 //          offset = 60;
 //        }
         else
         {
-          offset = -50;
+          offset = -60;
         }
         break;
         
@@ -316,14 +358,17 @@ void loop()
           dir = NONE; 
           break;
         }
+
         dir = LEFT;
-        if(ready && readyInterval > 300)
+        if(ready && readyInterval >= DEFINED_READY_TIME)
         {
+          Serial.println("Turn left!");
             isTurning = true;
             isSwitching = false;
         } 
         else
         {
+          Serial.println("Ready from left!");
           ready = true;
           isTurning = false;
           isSwitching = false;
@@ -343,13 +388,16 @@ void loop()
         }
 
         dir = RIGHT;
-        if(ready && readyInterval > 300)
+        if(ready && readyInterval >= DEFINED_READY_TIME)
         {
+          Serial.println("turn right!");
           isTurning = true;
           isSwitching = false;
+          
         }
         else 
         {
+          Serial.println("ready from right!");
           ready = true;
           isTurning = false;
           isSwitching = false;
@@ -378,14 +426,15 @@ void loop()
         break;
       }
       case 0b1111111: //full white
-        onWhite_cnt += currentTime - t2_cnt;
+        onWhite_cnt += dt;
         isSwitching = false;
         offset = 0;
 
         if(ready && dir != NONE)
         {
-          if(readyInterval > 300)
+          if(readyInterval >= DEFINED_READY_TIME)
           {
+            Serial.println("turn from direction!");
             isTurning = true;
           }
           else  
@@ -397,6 +446,7 @@ void loop()
         }
         else // just received ready signal
         {
+          Serial.println("ready from White!");
           ready = true;
           isTurning = false;
           passedFullWhite = true;
@@ -406,11 +456,20 @@ void loop()
       case 0b0000000: //full black
         offset = 0;
         isTurning = false;
-        isLosingLine = true;
-        if(ready && readyInterval > 300)
+
+        if(ready && readyInterval >= DEFINED_READY_TIME)
         {
           if(dir != NONE)
+          {
+            Serial.println("switch from direction!");
             isSwitching = true;
+          }
+          else{
+            isSwitching = ready = isTurning = false;
+            dir = side = NONE;
+            isLosingLine = true;
+            Serial.println("lose line!");
+          }
         }
         else
         {
@@ -427,14 +486,12 @@ void loop()
     
     //Serial.println(offset, 1);
 
-
     //If the Ready Signal we got and Turning signal come too quickly
     //we skip this signal maybe this is the Jam signal.  
     if (isSwitching || isTurning)   
     {
       if (isSwitching && dir != NONE)
       {
-        Serial.println("switch");
         car.turn((int16_t)60 * dir);
         car.run(baseSpeed + dir*20, baseSpeed - dir*20);
         delay(300);
@@ -461,58 +518,84 @@ void loop()
         dir = side = NONE;
         passedFullWhite = false;
       }
+
+
+
+
+      //TURN
       else if(isTurning && dir != NONE)
       {
-        Serial.println("turn");
+//        car.setLed(7, true);
         while(1)
         {
           if(readSensor() == 0)
-          {
+          {      
             break;
           }
           delay(5);
         }
-  
+        car.run(-255, -255);
+        delay(80);
+
         car.turn(60 * dir);
-        car.run(120 * dir, -120 * dir);
-        uint8_t sensorMask, sensorVal;
-        
-        if(dir == RIGHT)
+        if(dir == LEFT)
         {
-          sensorMask = 0b1001001;
-          sensorVal = 0b0001000;
+          car.run(40, 130);
         }
         else
         {
-          sensorMask = 0b1001001;
-          sensorVal = 0b0001000;        
+          car.run(130, 40);
         }
+        delay(300);
+        
         while(1)
         {
-          if((readSensor() & sensorMask) == sensorVal)
+          if((readSensor() & 0b1001001) == 0b0001000)
           {
-            Serial.println("break");
             break; 
           }
           delay(10);
         }
+        car.run(baseSpeed - 60*dir, baseSpeed + 60*dir);
+        car.turn(-15*dir);
+        delay(500);
         car.run(baseSpeed - 40*dir, baseSpeed + 40*dir);
-        car.turn(-30*dir);
-        delay(100);
-        car.run(baseSpeed - 20*dir, baseSpeed + 20*dir);
-        car.turn(-30*dir);
+        car.turn(0);
         delay(200);
+        
         car.run(baseSpeed, baseSpeed);
         car.turn(0);
+        
         dir = side = NONE;
         ready = isTurning = isSwitching = 0;
         passedFullWhite = false;
       }
     }
+
+
+
+
+    
     else
     {
+      myPID.SetSampleTime(dt);
       myPID.Compute();
       smoothTurn(angleOffset);
+      if(ready){
+//        baseSpeed -= 5;
+//        baseSpeed = baseSpeed < 80 ? 80: baseSpeed;
+        baseSpeed = 80;
+      }
+      else if(sensor & 0b1100011)
+      {
+        baseSpeed -= 5;
+        baseSpeed = baseSpeed < 120 ? 120: baseSpeed;
+      }
+      else
+      {
+        baseSpeed += 3;
+        baseSpeed = baseSpeed > 150 ? 150: baseSpeed;
+      }
       car.run(baseSpeed + (int16_t)(SPEEDRATIO * angleOffset), 
               baseSpeed - (int16_t)(SPEEDRATIO * angleOffset));
     }
@@ -522,7 +605,6 @@ void loop()
 //      Serial.println("ok");
 //    }
 
-    Serial.println(dir == -1 ? "left" : (dir == 0 ? "center" : "right"));
 
     //check no full black
     if (isLosingLine){
@@ -534,22 +616,24 @@ void loop()
     if (sensor != 0b1111111)
     {
       onWhite_cnt = 0;
+      checkStopSignal = true;
     }
-    if( onWhite_cnt >= TIME_TO_STOP)
+
+    if(onWhite_cnt >= TIME_TO_STOP && checkStopSignal)
     {
       countToStop--;
-      Serial.print("count = ");
-      Serial.println(countToStop);
       if(countToStop == 0)
       {
         finishedRacing = true;
         car.stop();
       }
+      
       onWhite_cnt = 0;
+      checkStopSignal = false;
     }
 
     oldOffset = offset;
-    t2_cnt = currentTime;
+    t1_cnt = currentTime;
   }
 
 } //end loop

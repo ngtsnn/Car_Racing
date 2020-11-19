@@ -52,7 +52,7 @@ void IRCar::Init(void){
 void IRCar::Set_LedAll(uint8_t val) {
   this->_ledControlVal = val;
 }
-void IRCar::Set_Led(uint8_t bit, bool state) {
+void IRCar::setLed(uint8_t bit, bool state) {
   if(state == true) {
     sbi(this->_ledControlVal, bit);
   }
@@ -92,22 +92,26 @@ unsigned int* IRCar::IRLed_GetAllAnalog(bool forceReadHW) {
         this->_IRLed_AnalogVal[iLed] += analogRead(iLedHW);
       }
       this->_IRLed_AnalogVal[iLed] /= 16;
+//      Serial.print(this->_IRLed_AnalogVal[iLed]);
+//      Serial.print("\t");
     }
   }
+//  Serial.println();
   return this->_IRLed_AnalogVal;
 }
 
 unsigned int IRCar::IRLed_GetEachAnalog(uint8_t LedIndex, bool forceReadHW) {
   /* if read from hardware is required */
-  if (forceReadHW == true) {
+  if (forceReadHW == true) 
+  {
     uint8_t iLedHW = LedIndex + IRLED_PIN_BASE;
     analogRead(iLedHW);
     this->_IRLed_AnalogVal[LedIndex] = 0;
-          for(uint8_t i = 0; i < 16; i++)
-      {
-        this->_IRLed_AnalogVal[LedIndex] += analogRead(iLedHW);
-      }
-      this->_IRLed_AnalogVal[LedIndex] /= 16;
+    for(uint8_t i = 0; i < 16; i++)
+    {
+      this->_IRLed_AnalogVal[LedIndex] += analogRead(iLedHW);
+    }
+    this->_IRLed_AnalogVal[LedIndex] /= 16;
   }
   return this->_IRLed_AnalogVal[LedIndex];
 }
@@ -182,7 +186,11 @@ uint8_t IRCar::Buttons_Check(void) {
 
 bool IRCar::getDistance(void) 
 {
-  return (analogRead(DISTANCE_PIN) > DISTANCE_THRESHOLD);
+//  bool distance =  !digitalRead(DISTANCE_PIN);
+////  Serial.print(distance);
+////  Serial.println('\t');
+//  return distance;
+  return !digitalRead(DISTANCE_PIN);
 }
 
 void IRCar::run(int16_t left, int16_t right) {
@@ -194,6 +202,7 @@ void IRCar::run(int16_t left, int16_t right) {
   /* start motor */
   sbi(_motorControlVal, STBY_BIT);
   /* limit motor (dont edit anything here) */
+  left += left > 0 ? 10 : - 10;
   if(left > PWM_MAX) {
     left = PWM_MAX;
   }

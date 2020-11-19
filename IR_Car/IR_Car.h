@@ -69,7 +69,7 @@ public:
   void turn(int16_t angle);
 
   void Set_LedAll(uint8_t val);
-  void Set_Led(uint8_t bit, bool state);
+  void setLed(uint8_t bit, bool state);
   void HC595_Update(uint8_t led, uint8_t motor);
 protected:
   void _Pins_Init(void);
