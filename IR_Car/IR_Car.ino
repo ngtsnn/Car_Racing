@@ -1,17 +1,17 @@
- #include "IR_Car.h"
+#include "IR_Car.h"
 #include <PID_v1.h>
 
 #define MAX_ANGLE 60
 #define KP        0.55
-#define KI        0.016
-#define KD        0.02
+#define KI        0.005
+#define KD        0.005
 
 #define LOOP_TIME       40
 #define TIME_TO_STOP    400
 #define ACCEL           10
 #define STEERING_ACCEL  15
 #define SPEEDRATIO      0.15
-#define DEFINED_READY_TIME 150
+#define DEFINED_READY_TIME 250
 
 IRCar car;
 
@@ -32,6 +32,7 @@ enum DIRECTION
   NONE = 0,
   RIGHT = 1
 };
+bool preReady = false;
 bool ready = false;
 bool isTurning = false;
 bool isSwitching = false;
@@ -47,7 +48,7 @@ bool checkStopSignal;
 
 //LED
 unsigned int *val;
-unsigned int threshold[7] = {500, 500,  500,  500,  500,  500,  500};
+unsigned int threshold[7] = {600, 600,  600,  600,  600,  600,  600};
 
 uint8_t countToStop;
 bool finishedRacing = false;
@@ -184,8 +185,10 @@ void loop()
 
   if( dt >= LOOP_TIME && !finishedRacing)
   {
+
     //find obstacles
     if(car.getDistance()){
+      Serial.println("find obstacle!");
       //slow down the car
 //      car.run(80, 80);
 
@@ -201,12 +204,13 @@ void loop()
       car.turn(0);
       delay(800);
       
-      car.run(100, 60);
+      car.run(120, 60);
       //steer right
       for(int angle = 0; angle <= 60; angle += 5){
         car.turn(angle);
-        delay(40);        
+        delay(30);        
       }
+      delay(100);
       car.run(80, 80);
       //go straight
       car.turn(0);
@@ -214,38 +218,37 @@ void loop()
       //catch middle line
       while(1)
       {
-        if((readSensor() & 0b1001001) == 0b0001000)
+        if(readSensor() & 0b0011000)
         {
           break; 
         }
         delay(10);
       }
 
-      car.turn(-15);
-      delay(300);
-      car.turn(0);
-      delay(100);
-
+      baseSpeed = 120;
       car.run(baseSpeed, baseSpeed);
-      ready = isTurning = isSwitching = false;
+      preReady = ready = isSwitching = isTurning = passedFullWhite = false;
       dir = side = NONE;
+      Serial.println("done");
     }
     
     sensor = readSensor();
     obstacle = car.getDistance();
     //Get time when we got Ready Signal
-    if(ready)
+    if(preReady)
     {
-      readyInterval += dt; 
       if(readyInterval >= DEFINED_READY_TIME)
       {
-        passedFullWhite = 0;
+        preReady = false;
+        ready = true;
+        readyInterval = 0;
+      }
+      else
+      {
+        readyInterval += dt; 
       }
     } 
-    else
-    {
-      readyInterval = 0;
-    }
+
     
     switch(sensor)
     {
@@ -359,17 +362,23 @@ void loop()
           break;
         }
 
-        dir = LEFT;
-        if(ready && readyInterval >= DEFINED_READY_TIME)
+       dir = LEFT;
+       if(ready)
         {
-          Serial.println("Turn left!");
-            isTurning = true;
-            isSwitching = false;
-        } 
-        else
+          Serial.println("turn left!");
+          isTurning = true;
+          isSwitching = false;
+          
+        }
+        else 
         {
-          Serial.println("Ready from left!");
-          ready = true;
+          Serial.println("Pready from right!");
+          preReady = true;
+          if(passedFullWhite)
+          {
+            ready = true;
+            dir = NONE;
+          }
           isTurning = false;
           isSwitching = false;
         }
@@ -388,7 +397,7 @@ void loop()
         }
 
         dir = RIGHT;
-        if(ready && readyInterval >= DEFINED_READY_TIME)
+        if(ready)
         {
           Serial.println("turn right!");
           isTurning = true;
@@ -397,31 +406,16 @@ void loop()
         }
         else 
         {
-          Serial.println("ready from right!");
-          ready = true;
+          Serial.println("Pready from right!");
+          preReady = true;
+          if(passedFullWhite)
+          {
+            ready = true;
+            dir = NONE;
+          }
           isTurning = false;
           isSwitching = false;
         }
-//        static uint8_t blankingCount;
-//        dir = RIGHT;
-//        if(blankingCount == 0)
-//        {
-//          if(ready)
-//          {
-//            isTurning = true;
-//            isSwitching = false;
-//          } 
-//          else
-//          {
-//            ready = true;
-//            isTurning = false;
-//            isSwitching = false;
-//          }
-//          blankingCount = 1;
-//        }
-//        else{
-//          blankingCount--;
-//        }
 
         break;
       }
@@ -430,25 +424,19 @@ void loop()
         isSwitching = false;
         offset = 0;
 
-        if(ready && dir != NONE)
+        if(ready)
         {
-          if(readyInterval >= DEFINED_READY_TIME)
+          if(dir != NONE)
           {
             Serial.println("turn from direction!");
             isTurning = true;
           }
-          else  
-          {
-            // If ready flag was set but readyInterval is too small,
-            //  reset readyInterval (still in the same white strip)
-            readyInterval = 0;
-          }
         }
         else // just received ready signal
         {
-          Serial.println("ready from White!");
-          ready = true;
+          Serial.println("Pready from White!");
           isTurning = false;
+          preReady = true;
           passedFullWhite = true;
           dir = NONE;
         }
@@ -457,14 +445,15 @@ void loop()
         offset = 0;
         isTurning = false;
 
-        if(ready && readyInterval >= DEFINED_READY_TIME)
+        if(ready)
         {
           if(dir != NONE)
           {
             Serial.println("switch from direction!");
             isSwitching = true;
           }
-          else{
+          else
+          {
             isSwitching = ready = isTurning = false;
             dir = side = NONE;
             isLosingLine = true;
@@ -488,12 +477,13 @@ void loop()
 
     //If the Ready Signal we got and Turning signal come too quickly
     //we skip this signal maybe this is the Jam signal.  
-    if (isSwitching || isTurning)   
+    if (isSwitching || isTurning || isLosingLine)   
     {
       if (isSwitching && dir != NONE)
       {
-        car.turn((int16_t)60 * dir);
-        car.run(baseSpeed + dir*20, baseSpeed - dir*20);
+        baseSpeed = 80;
+        car.turn((int16_t)40 * dir);        
+        car.run(baseSpeed + dir*50, baseSpeed - dir*50);
         delay(300);
         car.turn(0);
         // run until middle sensor activated
@@ -514,12 +504,39 @@ void loop()
         car.turn(0);
         car.run(baseSpeed, baseSpeed);
         
-        ready = isSwitching = isTurning = false;
+        ready = isSwitching = isTurning = passedFullWhite = false;
         dir = side = NONE;
-        passedFullWhite = false;
       }
 
 
+      //LOSE LINE
+      else if(isLosingLine){
+        for (int angle = 0; angle >= -30; angle -= 5){
+          car.turn(angle);
+          delay(30);
+        }
+        car.turn(0);
+        while(!(readSensor() & 0b1100000))
+        {
+          delay(10);
+        }
+        car.run(180, 100);
+        for (int angle = 0; angle <= 30; angle += 5){
+          car.turn(angle);
+          delay(30);
+        }
+        delay(160);
+        car.run(120, 120);
+        car.turn(0);
+        while(!(readSensor() & 0b0011100)){
+          delay(10);
+        }
+        car.turn(-15);
+        delay(100);
+        car.turn(0);
+        ready = isSwitching = isTurning = passedFullWhite = false;
+        dir = side = NONE;
+      }
 
 
       //TURN
@@ -534,19 +551,19 @@ void loop()
           }
           delay(5);
         }
-        car.run(-255, -255);
-        delay(80);
 
-        car.turn(60 * dir);
+        car.turn(40 * dir);
         if(dir == LEFT)
         {
-          car.run(40, 130);
+          car.run(-170, 210);
+          delay(500);
         }
         else
         {
-          car.run(130, 40);
+          car.run(200, -180);
+          delay(400);
         }
-        delay(300);
+        //delay(600);
         
         while(1)
         {
@@ -558,7 +575,7 @@ void loop()
         }
         car.run(baseSpeed - 60*dir, baseSpeed + 60*dir);
         car.turn(-15*dir);
-        delay(500);
+        delay(350);
         car.run(baseSpeed - 40*dir, baseSpeed + 40*dir);
         car.turn(0);
         delay(200);
@@ -566,9 +583,8 @@ void loop()
         car.run(baseSpeed, baseSpeed);
         car.turn(0);
         
+        ready = isSwitching = isTurning = passedFullWhite = false;
         dir = side = NONE;
-        ready = isTurning = isSwitching = 0;
-        passedFullWhite = false;
       }
     }
 
@@ -584,7 +600,7 @@ void loop()
       if(ready){
 //        baseSpeed -= 5;
 //        baseSpeed = baseSpeed < 80 ? 80: baseSpeed;
-        baseSpeed = 80;
+        baseSpeed = 50;
       }
       else if(sensor & 0b1100011)
       {
@@ -594,7 +610,7 @@ void loop()
       else
       {
         baseSpeed += 3;
-        baseSpeed = baseSpeed > 150 ? 150: baseSpeed;
+        baseSpeed = baseSpeed > 140 ? 140: baseSpeed;
       }
       car.run(baseSpeed + (int16_t)(SPEEDRATIO * angleOffset), 
               baseSpeed - (int16_t)(SPEEDRATIO * angleOffset));
